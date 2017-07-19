@@ -7,6 +7,7 @@ First we have to adjust Nginx config file for JSON log output in /vi/etc/nginx/n
 
 We have to edit http section:
 
+```
 http {
 ...
          log_format test '{ "requestDate": "$time_iso8601", '
@@ -20,16 +21,15 @@ http {
          '"http_user_agent": "$http_user_agent" }'; 
 ...
          }
-
-After this, vi /etc/nginx/sites-enabled/test.conf
-
-inside server section:
-
+```
+After this, edit vi /etc/nginx/sites-enabled/test.conf inside server section:
+```
   server {
   ...
   access_log /var/log/nginx/tv.log test;
   ...
   }
+```
 
 #Parsing
 
