@@ -2,9 +2,8 @@
 //tail -fn0 /var/log/nginx/access.log | \
 //while read line; do
 //echo $line | sed -e 's/T[0-9][0-9]:[0-9][0-9]:[0-9][0-9][+][0-9][0-9]:[0-9][0-9]//' -e 's/[+][0-9][0-9]:[0-9][0-9]//' -e 's/./ /62' | \
-//POST 'http://default:@5.101.64.66:8123/?query=INSERT INTO nginx.nginx_access FORMAT JSONEachRow'
+//POST 'http://default:@10.10.10.66:8123/?query=INSERT INTO nginx.nginx_streamer FORMAT JSONEachRow'
 //done
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -12,10 +11,52 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#define LPATH "/var/log/nginx/tv.log"
 #define BUFSIZE 32768
 #define BUFSIZE2 65536
 #define OK 1
 #define NO 0
+
+FILE* reopen(FILE* f, char lpath[])
+{
+	if (f) fclose(f);
+	while ((f=fopen(lpath,"r"))==NULL) {
+		printf("can't open %s\n",lpath);perror("fopen()");sleep(10);
+	}
+	printf("processing %s\n",lpath);
+	return f;
+}
+int reconnect(int sock, char* ip, int port) 
+{
+	struct sockaddr_in addr;
+	struct timeval timeout;
+
+	timeout.tv_sec = 5;
+	timeout.tv_usec = 0;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	inet_pton(AF_INET, ip, &addr.sin_addr);
+
+	if (sock) {close(sock); sleep(5);}
+	if ((sock=socket(AF_INET,SOCK_STREAM,0))<0) {perror("socket()");exit(-1);}
+	if (setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(char*)&timeout,sizeof(timeout)) < 0) {
+		perror("setsockopt-SO_SNDTIMEO()\n");
+		exit(-1);
+	}
+	
+	while(1) {
+		printf("connecting to %s:%d ...",ip,port); fflush(stdout);
+		if (connect(sock,(struct sockaddr*)&addr,sizeof(addr))==0) 
+			break; 
+		perror(" failed");
+		printf("waiting for 20s... "); fflush(stdout);
+		sleep(20);
+	}
+	puts("(re)connected\n"); fflush(stdout);
+	return sock;
+}
 
 int post(char *header, int lenght, char *ip, int port)
 {
@@ -36,8 +77,8 @@ int replace(char *src, char *dst)
 	if (!src || !dst) return NO;
 	if (src[0]!='{') return NO;
 	//memcpy(dst,src,BUFSIZE);
-	//{ "requestDate": "2016-11-18T02:12:54+03:00", "requestDateTime": "2016-11-18T02:12:54+03:00"
-	//{ "requestDate": "2016-11-18", "requestDateTime": "2016-11-18 02:12:54"
+	//{ "requestDate": "2017-07-18T02:12:54+03:00", "requestDateTime": "2017-07-18T02:12:54+03:00"
+	//{ "requestDate": "2017-07-18", "requestDateTime": "2017-07-18 02:12:54"
 	for (i=j=0;i<(BUFSIZE-1)&&src[i];i++) {
 		if (src[i]=='"') q++;
 		if (i==76) {dst[j++]=' '; continue;}
@@ -49,68 +90,77 @@ int replace(char *src, char *dst)
 	return NO;
 }
 
+
+//char	buf[BUFSIZE], data[BUFSIZE], header[BUFSIZE];
+char *buf, *data, *header;
+
 int main(int argc, char **argv)
 {
-	char	buf[BUFSIZE], data[BUFSIZE]={0}, header[BUFSIZE]={0};
-	int 	sock=0,
-			n,nn,
-			port=3425;
-	char	ip[256]="127.0.0.1",
-			lpath[]="/var/log/nginx/access.log";
-	FILE *f;
-   struct sockaddr_in addr;
-   struct timeval timeout;      
-   timeout.tv_sec = 5;
-   timeout.tv_usec = 0;
+	//char	buf[BUFSIZE], data[BUFSIZE]={0}, header[BUFSIZE]={0};
+	int	sock=0,
+		n,nn,e=0,
+		port=8123;			/* default port */
+	char	ip[256]="127.0.0.1",		/* default ip */
+		lpath[1024]=LPATH;
+	FILE*	f=0;
+	struct stat st;
 
-	if (argc==3) {		// j2s 127.0.0.1 2345
-		strncpy(ip,argv[1],256);
-	   port=atoi(argv[2]);
+	buf=calloc(BUFSIZE,1);
+	data=calloc(BUFSIZE,1);
+	header=calloc(BUFSIZE,1);
+
+	if (argc>=3) {	
+		strncpy(ip,argv[1],256); port=atoi(argv[2]);
+		if (argc==4) strncpy(lpath,argv[3],sizeof(lpath));
 	}
 
-printf("ip %s \t port %d\n", ip,port);
-
-   addr.sin_family = AF_INET;
-   addr.sin_port = htons(port); 
-   inet_pton(AF_INET, ip, &addr.sin_addr);
-
-	if((sock=socket(AF_INET,SOCK_STREAM,0))<0) {perror("socket()");exit(-1);}
-
-	if (setsockopt (sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-        sizeof(timeout)) < 0)
-        perror("setsockopt failed\n");
-
-	while(1) if((connect(sock,(struct sockaddr*)&addr,sizeof(addr)))>=0) break; else {perror("connect. retry."); sleep(30);}
+	f= reopen(f,lpath);
+	sock= reconnect(sock,ip,port);
 
 	for (;;) {
-		if (!(f=fopen(lpath,"r+"))) {puts("cantopenlogfile!");sleep(1);continue;}
-		else puts("-- log (re)opened --");
-		while (1) {
-         printf(".");
-			fgets(buf,sizeof(buf),f);
-			n=replace(buf,data);
-			nn=post(header,n,ip,port);
-			if (!n*nn) continue;
-			printf(">");
-			if (send(sock,header,nn,0)!=nn || send(sock,data,n,0)!=n) {
-fuckagain: 		 
-					puts("--- send error. reconnect ----------");
-					close(sock);
-					sleep(5);
-					if((sock=socket(AF_INET,SOCK_STREAM,0))<0) {perror("socket()");exit(-1);}
-   				if (setsockopt (sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,sizeof(timeout)) < 0)
-        				perror("setsockopt failed\n");
-					if((connect(sock,(struct sockaddr*)&addr,sizeof(addr)))<0) {
-        				perror("--- connect failure. sleep 30 & try again");
-						goto fuckagain;
-					}
-    		} 
+		printf("."); fflush(stdout);
+		//if (fgets(buf,sizeof(buf)-1,f)<=0) {
+		if (fgets(buf,BUFSIZE,f)<=0) {
+			printf("_"); fflush(stdout);
+			if (stat(lpath,&st)==-1) {
+				printf("\n%s ",lpath);
+				perror("stat()");
+				fflush(stdout);fflush(stderr);
+				sleep(5);
+			} else
+			if (st.st_size < ftell(f)) {
+				printf("\n%s externally reopens/trunkated\n",lpath);
+				f= reopen(f,lpath);
+				fflush(stdout);fflush(stderr);
+				continue;
+			}
+			printf("?");	//eof? 
+			fflush(stdout);
+			sleep(1);
+			continue;
+		}
+		printf("\\");fflush(stdout);
+		n=replace(buf,data);
+		nn=post(header,n,ip,port);
+		printf("/");fflush(stdout);
+		if (!n*nn) {sleep(1);continue;}
+		printf(">%d,%d>",nn,n);fflush(stdout);
+		if (send(sock,header,nn,MSG_NOSIGNAL)==nn) { 
+			printf("h");fflush(stdout);
+			if (send(sock,data,n,MSG_NOSIGNAL)==n) { printf("d");fflush(stdout);}
+			else {
+         	perror("send(-d-) not clean"); fflush(stdout); fflush(stderr);
+         	sock= reconnect(sock,ip,port);
+      	}
+		}
+		else {
+			perror("send(-h-) not clean"); fflush(stdout); fflush(stderr);
+			sock= reconnect(sock,ip,port);
 		}
 	}
 
    if (f) fclose(f);
    if (sock) close(sock);
-	puts("normal return");
+	puts("bye!"); fflush(NULL);
    return 0;
 }
-
