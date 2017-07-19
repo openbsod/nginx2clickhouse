@@ -3,7 +3,7 @@ Parsing and sending nginx logs to clickhouse db
 
 # Logging.
 
-First we have to adjust Nginx config file for JSON log output in /vi/etc/nginx/nginx.conf
+First we have to adjust Nginx config file for JSON log output with /vi /etc/nginx/nginx.conf
 
 We have to edit http section:
 
@@ -22,7 +22,7 @@ http {
 ...
          }
 ```
-After this, edit vi /etc/nginx/sites-enabled/test.conf inside server section:
+After this, same vi /etc/nginx/sites-enabled/test.conf inside server section:
 ```
   server {
   ...
