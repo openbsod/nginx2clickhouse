@@ -20,7 +20,7 @@ http {
          '"http_user_agent": "$http_user_agent" }';
          
 ...
-}
+         }
 
 vi /etc/nginx/sites-enabled/test.conf
 
@@ -30,4 +30,4 @@ server {
 ...
 access_log /var/log/nginx/tv.log test;
 ...
-}
+       }
