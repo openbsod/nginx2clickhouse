@@ -1,4 +1,4 @@
-// proof of concept
+//proof of concept
 //tail -fn0 /var/log/nginx/access.log | \
 //while read line; do
 //echo $line | sed -e 's/T[0-9][0-9]:[0-9][0-9]:[0-9][0-9][+][0-9][0-9]:[0-9][0-9]//' -e 's/[+][0-9][0-9]:[0-9][0-9]//' -e 's/./ /62' | \
@@ -19,6 +19,9 @@
 #define OK 1
 #define NO 0
 
+
+#define VER "-31.05"
+
 FILE* reopen(FILE* f, char lpath[])
 {
 	if (f) fclose(f);
@@ -33,7 +36,7 @@ int reconnect(int sock, char* ip, int port)
 	struct sockaddr_in addr;
 	struct timeval timeout;
 
-	timeout.tv_sec = 5;
+	timeout.tv_sec = 10;
 	timeout.tv_usec = 0;
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
@@ -41,9 +44,9 @@ int reconnect(int sock, char* ip, int port)
 
 	if (sock) {close(sock); sleep(5);}
 	if ((sock=socket(AF_INET,SOCK_STREAM,0))<0) {perror("socket()");exit(-1);}
-	if (setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(char*)&timeout,sizeof(timeout)) < 0) {
-		perror("setsockopt-SO_SNDTIMEO()\n");
-		exit(-1);
+	if (setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(void*)&timeout,sizeof(timeout)) < 0) {
+			perror("setsockopt-SO_SNDTIMEO()\n");
+			exit(-1);
 	}
 	
 	while(1) {
@@ -92,7 +95,7 @@ int replace(char *src, char *dst)
 
 
 //char	buf[BUFSIZE], data[BUFSIZE], header[BUFSIZE];
-char *buf, *data, *header;
+char *buf, *data, *header, *packet;
 
 int main(int argc, char **argv)
 {
@@ -105,9 +108,16 @@ int main(int argc, char **argv)
 	FILE*	f=0;
 	struct stat st;
 
+	if (argc==1) {
+		puts(VER);
+		puts("usage\n\j2ch remoteIP remotePort\n");
+		exit(0);
+	}
+
 	buf=calloc(BUFSIZE,1);
 	data=calloc(BUFSIZE,1);
 	header=calloc(BUFSIZE,1);
+	packet=calloc(BUFSIZE2,1);
 
 	if (argc>=3) {	
 		strncpy(ip,argv[1],256); port=atoi(argv[2]);
@@ -119,8 +129,7 @@ int main(int argc, char **argv)
 
 	for (;;) {
 		printf("."); fflush(stdout);
-		//if (fgets(buf,sizeof(buf)-1,f)<=0) {
-		if (fgets(buf,BUFSIZE,f)<=0) {
+		if (fgets(buf,BUFSIZE-1,f)<=0) {
 			printf("_"); fflush(stdout);
 			if (stat(lpath,&st)==-1) {
 				printf("\n%s ",lpath);
@@ -139,28 +148,31 @@ int main(int argc, char **argv)
 			sleep(1);
 			continue;
 		}
-		printf("\\");fflush(stdout);
-		n=replace(buf,data);
+
+			printf("\\");fflush(stdout);
+		n=replace(buf,data);	// ->
 		nn=post(header,n,ip,port);
-		printf("/");fflush(stdout);
 		if (!n*nn) {sleep(1);continue;}
-		printf(">%d,%d>",nn,n);fflush(stdout);
-		if (send(sock,header,nn,MSG_NOSIGNAL)==nn) { 
-			printf("h");fflush(stdout);
-			if (send(sock,data,n,MSG_NOSIGNAL)==n) { printf("d");fflush(stdout);}
-			else {
-         	perror("send(-d-) not clean"); fflush(stdout); fflush(stderr);
+
+		memcpy( packet, header, nn);
+		memcpy( packet+nn, data, n);
+			printf("/");fflush(stdout);
+
+			printf(">");fflush(stdout);
+again:
+		if (send(sock,packet,n+nn,MSG_NOSIGNAL)==n+nn) { 
+				printf("p");fflush(stdout);
+		} else {
+         	perror("send()"); fflush(stdout); fflush(stderr);
          	sock= reconnect(sock,ip,port);
-      	}
-		}
-		else {
-			perror("send(-h-) not clean"); fflush(stdout); fflush(stderr);
-			sock= reconnect(sock,ip,port);
-		}
+				sleep (3);
+				puts("re-send");fflush(stdout);
+				goto again;
+     	}
 	}
 
    if (f) fclose(f);
    if (sock) close(sock);
-	puts("bye!"); fflush(NULL);
+		puts("bye!"); fflush(NULL);
    return 0;
 }
