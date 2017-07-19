@@ -19,8 +19,7 @@
 #define OK 1
 #define NO 0
 
-
-#define VER "-31.05"
+#define VER "-31.06"
 
 FILE* reopen(FILE* f, char lpath[])
 {
@@ -44,10 +43,12 @@ int reconnect(int sock, char* ip, int port)
 
 	if (sock) {close(sock); sleep(5);}
 	if ((sock=socket(AF_INET,SOCK_STREAM,0))<0) {perror("socket()");exit(-1);}
+	/*
 	if (setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(void*)&timeout,sizeof(timeout)) < 0) {
 			perror("setsockopt-SO_SNDTIMEO()\n");
 			exit(-1);
 	}
+	*/
 	
 	while(1) {
 		printf("connecting to %s:%d ...",ip,port); fflush(stdout);
@@ -64,7 +65,7 @@ int reconnect(int sock, char* ip, int port)
 int post(char *header, int lenght, char *ip, int port)
 {
 	if (0 >= snprintf(header, BUFSIZE,
-"POST /?query=INSERT%%20INTO%%20nginx.nginx_streamer%%20FORMAT%%20JSONEachRow HTTP/1.1\n"
+"POST /?query=INSERT%%20INTO%%20nginx.nginx_test%%20FORMAT%%20JSONEachRow HTTP/1.1\n"
 "TE: deflate,gzip;q=0.3\n"
 "Connection: TE, close\n"
 "Host: %s:%d\n"
@@ -95,13 +96,13 @@ int replace(char *src, char *dst)
 
 
 //char	buf[BUFSIZE], data[BUFSIZE], header[BUFSIZE];
-char *buf, *data, *header, *packet;
+char *buf, *data, *header, *packet, *answer;
 
 int main(int argc, char **argv)
 {
 	//char	buf[BUFSIZE], data[BUFSIZE]={0}, header[BUFSIZE]={0};
 	int	sock=0,
-		n,nn,e=0,
+		r,n,nn,e=0,
 		port=8123;			/* default port */
 	char	ip[256]="127.0.0.1",		/* default ip */
 		lpath[1024]=LPATH;
@@ -110,7 +111,7 @@ int main(int argc, char **argv)
 
 	if (argc==1) {
 		puts(VER);
-		puts("usage\n j2ch remoteIP remotePort\n");
+		puts("usage\n\tj2s remoteIP remotePort\n");
 		exit(0);
 	}
 
@@ -118,6 +119,7 @@ int main(int argc, char **argv)
 	data=calloc(BUFSIZE,1);
 	header=calloc(BUFSIZE,1);
 	packet=calloc(BUFSIZE2,1);
+	answer=calloc(BUFSIZE,1);
 
 	if (argc>=3) {	
 		strncpy(ip,argv[1],256); port=atoi(argv[2]);
@@ -162,6 +164,15 @@ int main(int argc, char **argv)
 again:
 		if (send(sock,packet,n+nn,MSG_NOSIGNAL)==n+nn) { 
 				printf("p");fflush(stdout);
+				if ((r=recv(sock,answer,BUFSIZE-1,0))>0) {
+					printf("\n--[answer %dB]--\n",r);
+					puts(answer);
+					puts("--------------");
+					fflush(stdout);
+				} else {
+					perror("recv()");
+					fflush(stderr);
+				}
 		} else {
          	perror("send()"); fflush(stdout); fflush(stderr);
          	sock= reconnect(sock,ip,port);
@@ -176,3 +187,4 @@ again:
 		puts("bye!"); fflush(NULL);
    return 0;
 }
+
