@@ -13,10 +13,10 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#define LPATH "/var/log/nginx/access.log"
+#define LPATH "/var/log/nginx/tv.log"
 #define IP "127.0.0.1"
 #define PORT 8123
-#define TABLE "nginx.nginx_zabbix"
+#define TABLE "nginx.nginx_streamer"
 #define INTERVAL 20
 #define BUFSIZE 32768
 #define M8	8388608
