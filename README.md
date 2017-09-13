@@ -1,5 +1,9 @@
 # nginx2clickhouse
-Parsing and sending nginx logs to clickhouse db
+Parsing and sending nginx logs to clickhouse db real-time
+
+###### Grafana dashboard
+
+![alt text](https://github.com/openbsod/nginx2clickhouse/blob/master/iptv-status-returned.png)
 
 # Logging.
 
